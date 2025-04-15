@@ -31,11 +31,14 @@ def get_constr_out(x, R):
     c_out = c_out.unsqueeze(1)
     c_out = c_out.expand(len(x), R.shape[1], R.shape[1])
     R_batch = R.expand(len(x), R.shape[1], R.shape[1])
-
-    # Apply Lukasiewicz t-norm: T_LK(a, b) = max(a + b - 1, 0)
-    final_out = torch.max(R_batch * c_out.double() - 1, torch.zeros_like(R_batch))
-    final_out = torch.clamp(final_out, min=0)  # Ensure no negative values
+    
+    # Lukasiewicz t-norm: T(a, b) = max(a + b - 1, 0)
+    final_out = torch.max(R_batch + c_out - 1, torch.tensor(0.0).to(c_out.device))
+    
+    # Apply max across the second dimension
+    final_out, _ = torch.max(final_out, dim=2)
     return final_out
+
 
 
 class ConstrainedFFNNModel(nn.Module):
