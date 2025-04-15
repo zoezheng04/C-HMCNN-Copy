@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score, average_precision_score, precision_recall_curve, roc_auc_score, auc
+from sklearn.metrics import f1_score, average_precision_score, precision_recall_curve, roc_auc_score, auc, accuracy_score, precision_score, recall_score
 from utils.parser import *
 from utils import datasets
 
@@ -93,20 +93,10 @@ def main():
     args = parser.parse_args()
     hyperparams = {'batch_size':args.batch_size, 'num_layers':args.num_layers, 'dropout':args.dropout, 'non_lin':args.non_lin, 'hidden_dim':args.hidden_dim, 'lr':args.lr, 'weight_decay':args.weight_decay}
 
-    assert('_' in args.dataset)
-    assert('FUN' in args.dataset or 'GO' in args.dataset or 'others' in args.dataset)
-
     # Load train, val and test set
     dataset_name = args.dataset
     data = dataset_name.split('_')[0]
     ontology = dataset_name.split('_')[1]
-
-    # Dictionaries with number of features and number of labels for each dataset
-    input_dims = {'diatoms':371, 'enron':1001, 'imclef07a': 80, 'imclef07d': 80,'cellcycle':77, 'church':27, 'derisi':63, 'eisen':79, 'expr':561, 'gasch1':173, 'gasch2':52, 'hom':47034, 'seq':529, 'spo':86}
-    output_dims_FUN = {'cellcycle':499, 'church':499, 'derisi':499, 'eisen':461, 'expr':499, 'gasch1':499, 'gasch2':499, 'hom':499, 'seq':499, 'spo':499}
-    output_dims_GO = {'cellcycle':4122, 'church':4122, 'derisi':4116, 'eisen':3570, 'expr':4128, 'gasch1':4122, 'gasch2':4128, 'hom':4128, 'seq':4130, 'spo':4116}
-    output_dims_others = {'diatoms':398,'enron':56, 'imclef07a': 96, 'imclef07d': 46, 'reuters':102}
-    output_dims = {'FUN':output_dims_FUN, 'GO':output_dims_GO, 'others':output_dims_others}
 
     # Set seed
     seed = args.seed
@@ -129,8 +119,6 @@ def main():
         train, val, test = initialize_dataset(dataset_name, datasets)
         train.to_eval, val.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.uint8), torch.tensor(val.to_eval, dtype=torch.uint8), torch.tensor(test.to_eval, dtype=torch.uint8)
 
-    different_from_0 = torch.tensor(np.array((test.Y.sum(0)!=0), dtype = np.uint8), dtype=torch.uint8)
-
     # Compute matrix of ancestors R
     R = np.zeros(train.A.shape)
     np.fill_diagonal(R, 1)
@@ -144,56 +132,30 @@ def main():
     R = R.unsqueeze(0).to(device)
 
     # Rescale dataset and impute missing data
-    if ('others' in args.dataset):
-        scaler = preprocessing.StandardScaler().fit((train.X))
-        imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean').fit((train.X))
-        train.X, train.Y = torch.tensor(scaler.transform(imp_mean.transform(train.X))).to(device), torch.tensor(train.Y).to(device)
-        valX, valY = torch.tensor(scaler.transform(imp_mean.transform(valX))).to(device), torch.tensor(valY).to(device)
-    else:
-        scaler = preprocessing.StandardScaler().fit(np.concatenate((train.X, val.X)))
-        imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean').fit(np.concatenate((train.X, val.X)))
-        val.X, val.Y = torch.tensor(scaler.transform(imp_mean.transform(val.X))).to(device), torch.tensor(val.Y).to(device)
-        train.X, train.Y = torch.tensor(scaler.transform(imp_mean.transform(train.X))).to(device), torch.tensor(train.Y).to(device)        
+    scaler = preprocessing.StandardScaler().fit(np.concatenate((train.X, val.X)))
+    imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean').fit(np.concatenate((train.X, val.X)))
+    val.X, val.Y = torch.tensor(scaler.transform(imp_mean.transform(val.X))).to(device), torch.tensor(val.Y).to(device)
+    train.X, train.Y = torch.tensor(scaler.transform(imp_mean.transform(train.X))).to(device), torch.tensor(train.Y).to(device)        
 
     # Create loaders 
     train_dataset = [(x, y) for (x, y) in zip(train.X, train.Y)]
-    if ('others' in args.dataset):
-        val_dataset = [(x, y) for (x, y) in zip(valX, valY)]
-    else:
-        val_dataset = [(x, y) for (x, y) in zip(val.X, val.Y)]
-
+    val_dataset = [(x, y) for (x, y) in zip(val.X, val.Y)]
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(dataset=val_dataset, batch_size=args.batch_size, shuffle=False)
 
-    num_epochs = args.num_epochs
-    if 'GO' in dataset_name: 
-        num_to_skip = 4
-    else:
-        num_to_skip = 1 
-
     # Create the model
-    model = ConstrainedFFNNModel(input_dims[data], args.hidden_dim, output_dims[ontology][data]+num_to_skip, hyperparams, R)
+    model = ConstrainedFFNNModel(input_dims[data], args.hidden_dim, output_dims[ontology][data]+1, hyperparams, R)
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay) 
     criterion = nn.BCELoss()
 
-    # Set patience 
-    patience, max_patience = 20, 20
-    max_score = 0.0
-
-    # Create folder for the dataset (if it does not exist)
-    if not os.path.exists('logs/'+str(dataset_name)+'/'):
-        os.makedirs('logs/'+str(dataset_name)+'/')
-
     # Initialize CSV log
     log_data = []
 
-    for epoch in range(num_epochs):
+    for epoch in range(args.num_epochs):
         total_train = 0.0
         correct_train = 0.0
         model.train()
-
-        train_score = 0
 
         for i, (x, labels) in enumerate(train_loader):
             x = x.to(device)
@@ -201,12 +163,8 @@ def main():
 
             optimizer.zero_grad()
             output = model(x.float())
-            constr_output = get_constr_out(output, R)
-            train_output = labels * output.double()
-            train_output = get_constr_out(train_output, R)
-            train_output = (1 - labels) * constr_output.double() + labels * train_output
-            loss = criterion(train_output[:, train.to_eval], labels[:, train.to_eval]) 
-            predicted = constr_output.data > 0.5
+            loss = criterion(output, labels)
+            predicted = output.data > 0.5
 
             total_train += labels.size(0) * labels.size(1)
             correct_train += (predicted == labels.byte()).sum()
@@ -215,45 +173,27 @@ def main():
             optimizer.step()
 
         model.eval()
-        constr_output = constr_output.to('cpu')
+        constr_output = output.to('cpu')
         labels = labels.to('cpu')
-        train_score = average_precision_score(labels[:, train.to_eval], constr_output.data[:, train.to_eval], average='micro') 
 
-        for i, (x, y) in enumerate(val_loader):
-            x = x.to(device)
-            y = y.to(device)
+        accuracy = accuracy_score(labels.numpy().flatten(), constr_output.numpy().flatten())
+        precision = precision_score(labels.numpy().flatten(), constr_output.numpy().flatten(), average='micro')
+        recall = recall_score(labels.numpy().flatten(), constr_output.numpy().flatten(), average='micro')
+        f1 = f1_score(labels.numpy().flatten(), constr_output.numpy().flatten(), average='micro')
+        auc_score = roc_auc_score(labels.numpy(), constr_output.numpy(), average='micro', multi_class='ovr')
+        precision, recall, _ = precision_recall_curve(labels.numpy().flatten(), constr_output.numpy().flatten())
+        auprc = auc(recall, precision)
 
-            constrained_output = model(x.float())
-            predicted = constrained_output.data > 0.5
-
-            total = y.size(0) * y.size(1)
-            correct = (predicted == y.byte()).sum()
-
-            cpu_constrained_output = constrained_output.to('cpu')
-            y = y.to('cpu')
-
-            if i == 0:
-                constr_val = cpu_constrained_output
-                y_val = y
-            else:
-                constr_val = torch.cat((constr_val, cpu_constrained_output), dim=0)
-                y_val = torch.cat((y_val, y), dim=0)
-
-        score = average_precision_score(y_val[:, train.to_eval], constr_val.data[:, train.to_eval], average='micro') 
-        
-        if score >= max_score:
-            patience = max_patience
-            max_score = score
-        else:
-            patience -= 1
-
-        # Log to CSV
         epoch_data = {
             "Epoch": epoch,
             "Loss": loss.item(),
             "Accuracy Train": float(correct_train) / float(total_train),
-            "Accuracy": float(correct) / float(total),
-            "Precision Score": score
+            "Accuracy": accuracy,
+            "Precision": precision,
+            "Recall": recall,
+            "F1 Score": f1,
+            "AUC Score": auc_score,
+            "AU-PRC": auprc
         }
         log_data.append(epoch_data)
 
@@ -263,10 +203,6 @@ def main():
             if file.tell() == 0:  # If file is empty, write the headers
                 writer.writeheader()
             writer.writerow(epoch_data)
-
-        if patience == 0:
-            break
-
 
 if __name__ == "__main__":
     main()
