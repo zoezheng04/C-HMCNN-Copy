@@ -22,18 +22,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, average_precision_score, precision_recall_curve, roc_auc_score, auc
 
 def get_constr_out(x, R):
-    """ Given the output of the neural network x returns the output of MCM 
-        using the Lukasiewicz t-norm in the constraint layer """
+    """ Given the output of the neural network x returns the output of MCM given the hierarchy constraint expressed in the matrix R """
     c_out = x.double()
     c_out = c_out.unsqueeze(1)
-    c_out = c_out.expand(len(x), R.shape[1], R.shape[1])
-    R_batch = R.expand(len(x), R.shape[1], R.shape[1])
-    
-    # Lukasiewicz t-norm: T(a, b) = max(a + b - 1, 0)
-    final_out = torch.max(R_batch + c_out - 1, torch.tensor(0.0).to(c_out.device))
-    
-    # Apply max across the second dimension
-    final_out, _ = torch.max(final_out, dim=2)
+    c_out = c_out.expand(len(x),R.shape[1], R.shape[1])
+    R_batch = R.expand(len(x),R.shape[1], R.shape[1])
+    final_out, _ = torch.max(R_batch*c_out.double(), dim = 2)
     return final_out
 
 
