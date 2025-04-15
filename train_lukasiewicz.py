@@ -243,13 +243,15 @@ def main():
         # Convert output to binary for metrics
         constr_val = constr_val.bool()
         y_val = y_val.bool()
+        y_val_int = y_val[:, train.to_eval].to(torch.int)
+        constr_val_int = constr_val.data[:, train.to_eval].to(torch.int)
 
         # Calculate metrics
         average_precision = average_precision_score(y_val[:, train.to_eval], constr_val.data[:, train.to_eval], average='micro')
         coverage = coverage_error(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
         hamming = hamming_loss(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
         multi_label_accuracy = accuracy_score(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
-        one_error = (y_val[:, train.to_eval].argmax(axis=1) != constr_val.data[:, train.to_eval].argmax(axis=1)).mean()
+        one_error = (y_val_int.argmax(axis=1) != constr_val_int.argmax(axis=1)).float().mean()
         ranking_loss_value = label_ranking_loss(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
 
         if average_precision >= max_score:
