@@ -149,12 +149,12 @@ def main():
     # Load the datasets
     if ('others' in args.dataset):
         train, test = initialize_other_dataset(dataset_name, datasets)
-        train.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.bool),  torch.tensor(test.to_eval, dtype=torch.bool)
+        train.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.unit8),  torch.tensor(test.to_eval, dtype=torch.unit8)
     else:
         train, val, test = initialize_dataset(dataset_name, datasets)
-        train.to_eval, val.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.bool), torch.tensor(val.to_eval, dtype=torch.bool), torch.tensor(test.to_eval, dtype=torch.bool)
+        train.to_eval, val.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.unit8), torch.tensor(val.to_eval, dtype=torch.unit8), torch.tensor(test.to_eval, dtype=torch.unit8)
     
-    different_from_0 = torch.tensor(np.array((test.Y.sum(0)!=0), dtype = np.bool), dtype=torch.bool)
+    different_from_0 = torch.tensor(np.array((test.Y.sum(0)!=0), dtype = np.unit8), dtype=torch.unit8)
 
     # Compute matrix of ancestors R
     # Given n classes, R is an (n x n) matrix where R_ij = 1 if class i is descendant of class j
