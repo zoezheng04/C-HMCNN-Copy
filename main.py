@@ -22,6 +22,7 @@ from sklearn.metrics import accuracy_score, hamming_loss, f1_score, jaccard_scor
 import numpy
 
 from sklearn.metrics import f1_score, average_precision_score, precision_recall_curve, roc_auc_score, auc
+from sklearn.metrics import coverage_error, label_ranking_loss
 
 
 def get_constr_out(x, R):
@@ -268,11 +269,23 @@ def main():
             y_test = torch.cat((y_test, y), dim =0)
 
 
-    score = average_precision_score(y_test[:,test.to_eval], constr_test.data[:,test.to_eval], average='micro')
+    subset_accuracy = accuracy_score(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
+    f1_micro = f1_score(y_test[:, test.to_eval], predicted_test[:, test.to_eval], average='micro')
+    f1_macro = f1_score(y_test[:, test.to_eval], predicted_test[:, test.to_eval], average='macro')
+    avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
+    hamming = hamming_loss(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
+    coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
+    one_error = (predicted_test.argmax(axis=1) != y_test.argmax(axis=1)).mean()
+    ranking_loss = label_ranking_loss(y_test[:, test.to_eval], constr_test.data[:, test.to_eval])
 
-    f = open('results/'+dataset_name+'.csv', 'a')
-    f.write(str(seed)+ ',' +str(epoch) + ',' + str(score) + '\n')
-    f.close()
+    with open('results/' + dataset_name + '.csv', 'a') as f:
+    # Write headers if file is empty (first run)
+        if f.tell() == 0:
+            f.write("Seed,Epoch,Subset Accuracy,F1 Micro,F1 Macro,Average Precision,Hamming Loss,Coverage Error,One Error,Ranking Loss\n")
+    
+    # Write the current epoch's results
+        f.write(f"{seed},{epoch},{subset_accuracy},{f1_micro},{f1_macro},{avg_precision},{hamming},{coverage},{one_error},{ranking_loss}\n")
+
 
 if __name__ == "__main__":
     main()
