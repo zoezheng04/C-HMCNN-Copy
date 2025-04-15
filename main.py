@@ -31,7 +31,7 @@ def get_constr_out(x, R):
     c_out = c_out.unsqueeze(1)
     c_out = c_out.expand(len(x),R.shape[1], R.shape[1])
     R_batch = R.expand(len(x),R.shape[1], R.shape[1])
-    final_out, _ = torch.max(R_batch*c_out.double(), dim = 2)
+    final_out = torch.max(c_out + R_batch - 1, torch.tensor(0.0))
     return final_out
 
 
@@ -269,22 +269,19 @@ def main():
             y_test = torch.cat((y_test, y), dim =0)
 
 
-    subset_accuracy = accuracy_score(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
-    f1_micro = f1_score(y_test[:, test.to_eval], predicted_test[:, test.to_eval], average='micro')
-    f1_macro = f1_score(y_test[:, test.to_eval], predicted_test[:, test.to_eval], average='macro')
-    avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
-    hamming = hamming_loss(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
-    coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
-    one_error = (predicted_test.float().argmax(axis=1) != y_test.argmax(axis=1)).float().mean()
-    ranking_loss = label_ranking_loss(y_test[:, test.to_eval], constr_test.data[:, test.to_eval])
+    # Evaluation metrics
+avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
+coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
+one_error = (predicted_test.float().argmax(axis=1) != y_test.argmax(axis=1)).float().mean()
 
-    with open('results/' + dataset_name + '.csv', 'a') as f:
-    # Write headers if file is empty (first run)
-        if f.tell() == 0:
-            f.write("Seed,Epoch,Subset Accuracy,F1 Micro,F1 Macro,Average Precision,Hamming Loss,Coverage Error,One Error,Ranking Loss\n")
+# Save the evaluation metrics to a file
+with open('results/' + dataset_name + '.csv', 'a') as f:
+    # Write headers if the file is empty (first run)
+    if f.tell() == 0:
+        f.write("Seed,Epoch,Average Precision,Coverage Error,One Error\n")
     
     # Write the current epoch's results
-        f.write(f"{seed},{epoch},{subset_accuracy},{f1_micro},{f1_macro},{avg_precision},{hamming},{coverage},{one_error},{ranking_loss}\n")
+    f.write(f"{seed},{epoch},{avg_precision},{coverage},{one_error}\n")
 
 
 if __name__ == "__main__":
