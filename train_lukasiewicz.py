@@ -1,5 +1,6 @@
 import os
 import importlib
+os.environ["DATA_FOLDER"] = "./"
 import argparse
 import torch
 import torch.utils.data
