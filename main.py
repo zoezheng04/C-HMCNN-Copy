@@ -17,21 +17,24 @@ from utils import datasets
 
 from sklearn.impute import SimpleImputer
 from sklearn import preprocessing
-from sklearn.metrics import accuracy_score, hamming_loss, f1_score, jaccard_score
+from sklearn.metrics import accuracy_score, hamming_loss, f1_score, jaccard_similarity_score
 
 import numpy
 
 from sklearn.metrics import f1_score, average_precision_score, precision_recall_curve, roc_auc_score, auc
-from sklearn.metrics import coverage_error, label_ranking_loss
 
 
 def get_constr_out(x, R):
-    """ Given the output of the neural network x returns the output of MCM given the hierarchy constraint expressed in the matrix R """
+    """ Given the output of the neural network x returns the output of MCM 
+        with the Lukasiewicz t-norm constraint layer applied based on matrix R """
     c_out = x.double()
     c_out = c_out.unsqueeze(1)
-    c_out = c_out.expand(len(x),R.shape[1], R.shape[1])
-    R_batch = R.expand(len(x),R.shape[1], R.shape[1])
-    final_out = torch.max(c_out + R_batch - 1, torch.tensor(0.0))
+    c_out = c_out.expand(len(x), R.shape[1], R.shape[1])
+    R_batch = R.expand(len(x), R.shape[1], R.shape[1])
+
+    # Apply Lukasiewicz t-norm: T_LK(a, b) = max(a + b - 1, 0)
+    final_out = torch.max(R_batch * c_out.double() - 1, torch.zeros_like(R_batch))
+    final_out = torch.clamp(final_out, min=0)  # Ensure no negative values
     return final_out
 
 
@@ -39,10 +42,10 @@ class ConstrainedFFNNModel(nn.Module):
     """ C-HMCNN(h) model - during training it returns the not-constrained output that is then passed to MCLoss """
     def __init__(self, input_dim, hidden_dim, output_dim, hyperparams, R):
         super(ConstrainedFFNNModel, self).__init__()
-
+        
         self.nb_layers = hyperparams['num_layers']
         self.R = R
-
+        
         fc = []
         for i in range(self.nb_layers):
             if i == 0:
@@ -52,16 +55,16 @@ class ConstrainedFFNNModel(nn.Module):
             else:
                 fc.append(nn.Linear(hidden_dim, hidden_dim))
         self.fc = nn.ModuleList(fc)
-
+        
         self.drop = nn.Dropout(hyperparams['dropout'])
-
-
+        
+        
         self.sigmoid = nn.Sigmoid()
         if hyperparams['non_lin'] == 'tanh':
             self.f = nn.Tanh()
         else:
             self.f = nn.ReLU()
-
+        
     def forward(self, x):
         for i in range(self.nb_layers):
             if i == self.nb_layers-1:
@@ -153,7 +156,7 @@ def main():
     else:
         train, val, test = initialize_dataset(dataset_name, datasets)
         train.to_eval, val.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.uint8), torch.tensor(val.to_eval, dtype=torch.uint8), torch.tensor(test.to_eval, dtype=torch.uint8)
-
+    
     different_from_0 = torch.tensor(np.array((test.Y.sum(0)!=0), dtype = np.uint8), dtype=torch.uint8)
 
     # Compute matrix of ancestors R
@@ -217,7 +220,7 @@ def main():
 
             x = x.to(device)
             labels = labels.to(device)
-
+        
             # Clear gradients w.r.t. parameters
             optimizer.zero_grad()
             output = model(x.float())
@@ -243,7 +246,7 @@ def main():
     for i, (x,y) in enumerate(test_loader):
 
         model.eval()
-
+                
         x = x.to(device)
         y = y.to(device)
 
@@ -269,17 +272,11 @@ def main():
             y_test = torch.cat((y_test, y), dim =0)
 
 
-    avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
-    coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
-    one_error = (predicted_test.float().argmax(axis=1) != y_test.argmax(axis=1)).float().mean()
+    score = average_precision_score(y_test[:,test.to_eval], constr_test.data[:,test.to_eval], average='micro')
 
-    with open('results/' + dataset_name + '.csv', 'a') as f:
-     # Write headers if the file is empty (first run)
-        if f.tell() == 0:
-            f.write("Seed,Epoch,Average Precision,Coverage Error,One Error\n")
-    # Write the current epoch's results
-        f.write(f"{seed},{epoch},{avg_precision},{coverage},{one_error}\n")
-
+    f = open('results/'+dataset_name+'.csv', 'a')
+    f.write(str(seed)+ ',' +str(epoch) + ',' + str(score) + '\n')
+    f.close()
 
 if __name__ == "__main__":
     main()
