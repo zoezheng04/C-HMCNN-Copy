@@ -39,10 +39,10 @@ class ConstrainedFFNNModel(nn.Module):
     """ C-HMCNN(h) model - during training it returns the not-constrained output that is then passed to MCLoss """
     def __init__(self, input_dim, hidden_dim, output_dim, hyperparams, R):
         super(ConstrainedFFNNModel, self).__init__()
-        
+
         self.nb_layers = hyperparams['num_layers']
         self.R = R
-        
+
         fc = []
         for i in range(self.nb_layers):
             if i == 0:
@@ -52,16 +52,16 @@ class ConstrainedFFNNModel(nn.Module):
             else:
                 fc.append(nn.Linear(hidden_dim, hidden_dim))
         self.fc = nn.ModuleList(fc)
-        
+
         self.drop = nn.Dropout(hyperparams['dropout'])
-        
-        
+
+
         self.sigmoid = nn.Sigmoid()
         if hyperparams['non_lin'] == 'tanh':
             self.f = nn.Tanh()
         else:
             self.f = nn.ReLU()
-        
+
     def forward(self, x):
         for i in range(self.nb_layers):
             if i == self.nb_layers-1:
@@ -153,7 +153,7 @@ def main():
     else:
         train, val, test = initialize_dataset(dataset_name, datasets)
         train.to_eval, val.to_eval, test.to_eval = torch.tensor(train.to_eval, dtype=torch.uint8), torch.tensor(val.to_eval, dtype=torch.uint8), torch.tensor(test.to_eval, dtype=torch.uint8)
-    
+
     different_from_0 = torch.tensor(np.array((test.Y.sum(0)!=0), dtype = np.uint8), dtype=torch.uint8)
 
     # Compute matrix of ancestors R
@@ -217,7 +217,7 @@ def main():
 
             x = x.to(device)
             labels = labels.to(device)
-        
+
             # Clear gradients w.r.t. parameters
             optimizer.zero_grad()
             output = model(x.float())
@@ -243,7 +243,7 @@ def main():
     for i, (x,y) in enumerate(test_loader):
 
         model.eval()
-                
+
         x = x.to(device)
         y = y.to(device)
 
@@ -269,20 +269,16 @@ def main():
             y_test = torch.cat((y_test, y), dim =0)
 
 
-    # Evaluation metrics
-avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
-coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
-one_error = (predicted_test.float().argmax(axis=1) != y_test.argmax(axis=1)).float().mean()
+    avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
+    coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
+    one_error = (predicted_test.float().argmax(axis=1) != y_test.argmax(axis=1)).float().mean()
 
-# Save the evaluation metrics to a file
-with open('results/' + dataset_name + '.csv', 'a') as f:
-    # Write headers if the file is empty (first run)
-    if f.tell() == 0:
-        f.write("Seed,Epoch,Average Precision,Coverage Error,One Error\n")
-    
+    with open('results/' + dataset_name + '.csv', 'a') as f:
+     # Write headers if the file is empty (first run)
+        if f.tell() == 0:
+            f.write("Seed,Epoch,Average Precision,Coverage Error,One Error\n")
     # Write the current epoch's results
-    f.write(f"{seed},{epoch},{avg_precision},{coverage},{one_error}\n")
+        f.write(f"{seed},{epoch},{avg_precision},{coverage},{one_error}\n")
 
 
 if __name__ == "__main__":
-    main()
