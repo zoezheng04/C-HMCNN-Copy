@@ -275,7 +275,7 @@ def main():
     avg_precision = average_precision_score(y_test[:, test.to_eval], constr_test.data[:, test.to_eval], average='micro')
     hamming = hamming_loss(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
     coverage = coverage_error(y_test[:, test.to_eval], predicted_test[:, test.to_eval])
-    one_error = (predicted_test.argmax(axis=1) != y_test.argmax(axis=1)).mean()
+    one_error = (predicted_test.float().argmax(axis=1) != y_test.argmax(axis=1)).float().mean()
     ranking_loss = label_ranking_loss(y_test[:, test.to_eval], constr_test.data[:, test.to_eval])
 
     with open('results/' + dataset_name + '.csv', 'a') as f:
