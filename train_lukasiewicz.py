@@ -14,10 +14,10 @@ from sklearn.impute import SimpleImputer
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, average_precision_score, precision_recall_curve, roc_auc_score, auc
+from sklearn.metrics import coverage_error, hamming_loss, accuracy_score, label_ranking_loss
 from utils.parser import *
 from utils import datasets
-from sklearn.metrics import coverage_error, hamming_loss, accuracy_score, label_ranking_loss
- 
+
 def get_constr_out(x, R):
     """ Given the output of the neural network x returns the output of MCM 
         using the Lukasiewicz t-norm in the constraint layer """
@@ -25,15 +25,15 @@ def get_constr_out(x, R):
     c_out = c_out.unsqueeze(1)
     c_out = c_out.expand(len(x), R.shape[1], R.shape[1])
     R_batch = R.expand(len(x), R.shape[1], R.shape[1])
- 
+
     # Lukasiewicz t-norm: T(a, b) = max(a + b - 1, 0)
     final_out = torch.max(R_batch + c_out - 1, torch.zeros_like(c_out))
- 
+
     # Apply max across the second dimension
     final_out, _ = torch.max(final_out, dim=2)
     return final_out
- 
- 
+
+
 class ConstrainedFFNNModel(nn.Module):
     """ C-HMCNN(h) model - during training it returns the not-constrained output that is then passed to MCLoss """
     def __init__(self, input_dim, hidden_dim, output_dim, hyperparams, R):
@@ -240,7 +240,11 @@ def main():
                 constr_val = torch.cat((constr_val, cpu_constrained_output), dim=0)
                 y_val = torch.cat((y_val, y), dim=0)
 
-        score = average_precision_score(y_val[:, train.to_eval], constr_val.data[:, train.to_eval], average='micro')
+        # Convert output to binary for metrics
+        constr_val = constr_val.bool()
+        y_val = y_val.bool()
+
+        # Calculate metrics
         average_precision = average_precision_score(y_val[:, train.to_eval], constr_val.data[:, train.to_eval], average='micro')
         coverage = coverage_error(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
         hamming = hamming_loss(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
@@ -248,27 +252,27 @@ def main():
         one_error = (y_val[:, train.to_eval].argmax(axis=1) != constr_val.data[:, train.to_eval].argmax(axis=1)).mean()
         ranking_loss_value = label_ranking_loss(y_val[:, train.to_eval], constr_val.data[:, train.to_eval])
 
-        if score >= max_score:
+        if average_precision >= max_score:
             patience = max_patience
-            max_score = score
+            max_score = average_precision
         else:
             patience -= 1
 
         # Log to CSV
         epoch_data = {
-        "Epoch": epoch,
-        "Loss": loss.item(),
-        "Accuracy Train": float(correct_train) / float(total_train),
-        "Accuracy": float(correct) / float(total),
-        "Precision Score": average_precision,
-        "Coverage Error": coverage,
-        "Hamming Loss": hamming,
-        "Multi-label Accuracy": multi_label_accuracy,
-        "One-error": one_error,
-        "Ranking Loss": ranking_loss_value
-    }
-
+            "Epoch": epoch,
+            "Loss": loss.item(),
+            "Accuracy Train": float(correct_train) / float(total_train),
+            "Accuracy": float(correct) / float(total),
+            "Precision Score": average_precision,
+            "Coverage Error": coverage,
+            "Hamming Loss": hamming,
+            "Multi-label Accuracy": multi_label_accuracy,
+            "One-error": one_error,
+            "Ranking Loss": ranking_loss_value
+        }
         log_data.append(epoch_data)
+
         # Write to CSV every epoch
         with open('logs/'+str(dataset_name)+'/epoch_logs.csv', mode='a', newline='') as file:
             writer = csv.DictWriter(file, fieldnames=epoch_data.keys())
