@@ -21,11 +21,11 @@ import networkx as nx
 def get_constr_out(x, R):
     """ Given the output of the neural network x returns the output of MCM given the hierarchy constraint expressed in the matrix R using Łukasiewicz T-norm """
     c_out = x.double()
-    c_out = c_out.unsqueeze(1)
-    c_out = c_out.expand(len(x), R.shape[1], R.shape[1])
-    R_batch = R.expand(len(x), R.shape[1], R.shape[1])
+    c_out = c_out.unsqueeze(1)  # Add an extra dimension for batch processing
+    c_out = c_out.expand(len(x), R.shape[1], R.shape[1])  # Expand to match R's shape
+    R_batch = R.expand(len(x), R.shape[1], R.shape[1])  # Expand R matrix
 
-    # Łukasiewicz T-norm: T(a, b) = max(a + b - 1, 0)
+    # Apply Łukasiewicz T-norm: T(a, b) = max(a + b - 1, 0)
     final_out = torch.max(c_out + R_batch - 1, torch.tensor(0.0))  # Apply Łukasiewicz T-norm
     return final_out
 
@@ -156,9 +156,10 @@ def main():
     val_loader = torch.utils.data.DataLoader(dataset=val_dataset, batch_size=args.batch_size, shuffle=False)
 
     # Create the model
-    model = ConstrainedFFNNModel(input_dims[data], args.hidden_dim, output_dims[ontology][data], hyperparams, R)
+    num_labels = output_dims[ontology][data]  # Ensure this matches the expected output dimension (500 in your case)
+    model = ConstrainedFFNNModel(input_dims[data], args.hidden_dim, num_labels, hyperparams, R)
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay) 
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     criterion = nn.BCELoss()
 
     # Set patience
@@ -217,7 +218,7 @@ def main():
                 constr_val = torch.cat((constr_val, cpu_constrained_output), dim=0)
                 y_val = torch.cat((y_val, y), dim=0)
 
-        score = average_precision_score(y_val[:,train.to_eval], constr_val.data[:,train.to_eval], average='micro') 
+        score = average_precision_score(y_val[:,train.to_eval], constr_val.data[:,train.to_eval], average='micro')
 
         if score >= max_score:
             patience = max_patience
